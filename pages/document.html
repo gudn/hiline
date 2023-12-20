@@ -120,6 +120,15 @@
       const contentInput = document.getElementById("contentInput");
       const editor = new Quill("#editor", {
         theme: "snow",
+        modules: {
+          toolbar: [
+            [{ header: ["1", "2", "3", false] }],
+            ["bold", "italic", "underline", "link"],
+            [{ list: "ordered" }, { list: "bullet" }],
+            ["image", "video"],
+            ["clean"],
+          ],
+        },
       });
 
       bc.onmessage = (msg) => {
