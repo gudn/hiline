@@ -192,6 +192,11 @@
         zoomMin: 24 * 60 * 60 * 1000,
         horizontalScroll: true,
         onAdd(item, callback) {
+          if (!item.group) {
+            callback(null);
+            return;
+          }
+
           addDocumentCallbackData = { item, callback };
           addDocumentDialog.showModal();
         },
