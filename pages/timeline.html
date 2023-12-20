@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hiline</title>
+    <script
+      type="text/javascript"
+      src="https://unpkg.com/vis-timeline@latest/standalone/umd/vis-timeline-graph2d.min.js"
+    ></script>
+    <link
+      href="https://unpkg.com/vis-timeline@latest/styles/vis-timeline-graph2d.min.css"
+      rel="stylesheet"
+      type="text/css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css"
+    />
+    <style>
+      nav {
+        justify-content: end;
+        align-items: center;
+      }
+
+      nav button {
+        width: auto;
+      }
+
+      nav {
+        padding: var(--spacing);
+      }
+
+      main {
+        padding-top: 0 !important;
+      }
+    </style>
+  </head>
+  <body>
+    <datalist id="known-groups"></datalist>
+    <nav class>
+      <button role="button" id="add-group-button">Add group</button>
+    </nav>
+    <main class="container-fluid">
+      <div id="visualization"></div>
+    </main>
+    <dialog id="add-group-dialog">
+      <article>
+        <header>
+          <a
+            id="add-group-close"
+            href="#close"
+            aria-label="Close"
+            class="close"
+          ></a>
+          Add group
+        </header>
+        <form id="add-group-form">
+          <label for="add-group-input">Group name</label>
+          <input autofocus list="known-groups" id="add-group-input" required />
+        </form>
+        <footer>
+          <button role="button" id="add-group-submit">Add</button>
+        </footer>
+      </article>
+    </dialog>
+    <dialog id="add-document-dialog">
+      <article>
+        <header>
+          <a
+            id="add-document-close"
+            href="#close"
+            aria-label="Close"
+            class="close"
+          ></a>
+          Add document
+        </header>
+        <form id="add-document-form">
+          <label for="add-document-input">Document title</label>
+          <input autofocus id="add-document-input" required />
+        </form>
+        <footer>
+          <button role="button" id="add-document-submit">Add</button>
+        </footer>
+      </article>
+    </dialog>
+    <script>
+      const documents = new vis.DataSet();
+      const groups = new vis.DataSet();
+
+      const container = document.getElementById("visualization");
+
+      const addDocumentDialog = document.getElementById("add-document-dialog");
+      const addDocumentInput = document.getElementById("add-document-input");
+      let addDocumentCallbackData = null;
+
+      function validate(text) {
+        return text.indexOf(":") == -1;
+      }
+
+      function jsonify(item) {
+        const c = { ...item };
+        delete c.id;
+        return JSON.stringify(c, null, 2);
+      }
+
+      function addDocument() {
+        const name = addDocumentInput.value?.trim();
+        addDocumentInput.value = "";
+
+        if (addDocumentCallbackData == null) {
+          addDocumentDialog.close();
+          console.warn("add document called without addDocumentCallbackData");
+        }
+
+        if (!name) {
+          return;
+        }
+
+        if (!validate(name)) {
+          alert("invalid name. Name may not contain a colon");
+          return;
+        }
+        addDocumentDialog.close();
+
+        const { item, callback } = addDocumentCallbackData;
+        addDocumentCallbackData = null;
+        item.content = name;
+        item.id += ".json";
+        if (item.type === undefined) {
+          item.type = item.end === undefined ? "box" : "range";
+        }
+        fetch(`/api/document/${encodeURI(item.id)}`, {
+          method: "POST",
+          body: jsonify(item),
+        }).then((resp) => {
+          if (resp.ok) {
+            callback(item);
+          } else {
+            callback(null);
+          }
+        });
+      }
+
+      document
+        .getElementById("add-document-form")
+        .addEventListener("submit", addDocument);
+
+      document
+        .getElementById("add-document-submit")
+        .addEventListener("click", addDocument);
+
+      const options = {
+        editable: true,
+        groupEditable: true,
+        cluster: {
+          maxItems: 1,
+        },
+        moveable: true,
+        zoomKey: "shiftKey",
+        horizontalScroll: true,
+        onAdd(item, callback) {
+          addDocumentCallbackData = { item, callback };
+          addDocumentDialog.showModal();
+        },
+        onMove(item, callback) {
+          fetch(`/api/document/${encodeURI(item.id)}`, {
+            method: "POST",
+            body: jsonify(item),
+          }).then((resp) => {
+            if (resp.ok) {
+              callback(item);
+            } else {
+              callback(null);
+            }
+          });
+        },
+        onRemove(item, callback) {
+          fetch(`/api/document/${encodeURI(item.id)}`, {
+            method: "DELETE",
+          }).then((resp) => {
+            if (resp.ok) {
+              callback(item);
+            } else {
+              callback(null);
+            }
+          });
+        },
+      };
+
+      const timeline = new vis.Timeline(container, documents, groups, options);
+
+      const knownGroupsList = document.getElementById("known-groups");
+      const addGroupDialog = document.getElementById("add-group-dialog");
+      const addGroupInput = document.getElementById("add-group-input");
+
+      fetch("/api/group").then(async (resp) => {
+        const groups = await resp.json();
+        for (const group of groups) {
+          const el = document.createElement("option");
+          el.value = group;
+          knownGroupsList.appendChild(el);
+        }
+      });
+
+      document
+        .getElementById("add-group-button")
+        .addEventListener("click", () => {
+          addGroupDialog.showModal();
+        });
+
+      document
+        .getElementById("add-group-close")
+        .addEventListener("click", () => {
+          addGroupInput.value = "";
+          addGroupDialog.close();
+        });
+
+      let lastGroupOrder = 0;
+
+      function addGroup(group, nested = null) {
+        if (!knownGroupsList.querySelector(`option[value="${group}"]`)) {
+          const el = document.createElement("option");
+          el.value = group;
+          knownGroupsList.appendChild(el);
+        }
+
+        const oldItem = groups.get(group);
+        if (!!oldItem) {
+          oldItem.nestedGroups = (nested ?? []).concat(
+            oldItem.nestedGroups ?? []
+          );
+          groups.update(oldItem);
+        } else {
+          const colon = group.lastIndexOf("/");
+          if (colon == -1) {
+            groups.add({
+              id: group,
+              content: group,
+              nestedGroups: nested,
+              order: lastGroupOrder,
+            });
+          } else {
+            groups.add({
+              id: group,
+              content: group.substring(colon + 1),
+              nestedGroups: nested,
+              order: lastGroupOrder,
+            });
+            addGroup(group.substring(0, colon), [group]);
+          }
+          lastGroupOrder++;
+        }
+      }
+
+      function addGroupEvent() {
+        const groupName = addGroupInput.value?.trim();
+        addGroupInput.value = "";
+        if (!groupName) {
+          return;
+        }
+
+        if (!validate(groupName)) {
+          alert("invalid group. Group may not contain a colon");
+          return;
+        }
+        addGroupDialog.close();
+        fetch(`/api/group/${encodeURI(groupName)}`).then(async (resp) => {
+          addGroup(groupName);
+          if (resp.status == 200) {
+            const docs = await resp.json();
+            documents.update(docs);
+            timeline.focus(docs.map((doc) => doc.id));
+          }
+        });
+      }
+
+      document
+        .getElementById("add-group-form")
+        .addEventListener("submit", addGroupEvent);
+
+      document
+        .getElementById("add-group-submit")
+        .addEventListener("click", addGroupEvent);
+    </script>
+  </body>
+</html>

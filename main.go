@@ -67,8 +67,13 @@ func main() {
 	Scan(*root, groups)
 
 	api := NewApi(groups)
+	pages := Pages{}
+
+	mux := http.NewServeMux()
+	mux.Handle("/api/", api)
+	mux.Handle("/", pages)
 
 	slog.Info("starting listening", "addr", *addr, "root", *root)
-	err := http.ListenAndServe(*addr, loggerMiddleware(api))
+	err := http.ListenAndServe(*addr, loggerMiddleware(mux))
 	slog.Error("failed serve", "error", err)
 }

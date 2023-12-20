@@ -10,14 +10,13 @@ import (
 type DocumentPath string
 
 type Document struct {
-	ClassName string   `json:"className,omitempty"`
-	Group     string   `json:"group"`
-	Id        string   `json:"id"`
-	Content   string   `json:"content"`
-	Start     string   `json:"start"`
-	End       string   `json:"end,omitempty"`
-	Type      string   `json:"type"`
-	Groups    []string `json:"groups"`
+	ClassName string `json:"className,omitempty"`
+	Group     string `json:"group"`
+	Id        string `json:"id,omitempty"`
+	Content   string `json:"content"`
+	Start     string `json:"start"`
+	End       string `json:"end,omitempty"`
+	Type      string `json:"type"`
 }
 
 func (doc *Document) IsValid() bool {
@@ -33,7 +32,7 @@ func (doc *Document) IsValid() bool {
 	if doc.Type == "range" && doc.End == "" {
 		return false
 	}
-	if doc.Group != "" {
+	if doc.Group == "" {
 		return false
 	}
 	return true
@@ -48,10 +47,10 @@ func (dp DocumentPath) Open() (*os.File, error) {
 }
 
 func (dp DocumentPath) Write(contents []byte) error {
-	return os.WriteFile(dp.String(), contents, 0o777)
+	return os.WriteFile(dp.String(), contents, 0o664)
 }
 
-func (dp DocumentPath) Read(group string) (Document, error) {
+func (dp DocumentPath) Read() (Document, error) {
 	f, err := dp.Open()
 	if err != nil {
 		return Document{}, err
@@ -61,7 +60,6 @@ func (dp DocumentPath) Read(group string) (Document, error) {
 	var doc Document
 	err = json.NewDecoder(f).Decode(&doc)
 	doc.Id = string(dp)
-	doc.Group = group
 	return doc, err
 }
 
@@ -70,16 +68,25 @@ type Group struct {
 	Id           string   `json:"id"`
 	NestedGroups []string `json:"nestedGroups,omitempty"`
 
-	parent    *Group         `json:"-"`
-	Documents []DocumentPath `json:"-"`
+	parent    *Group                    `json:"-"`
+	Documents map[DocumentPath]struct{} `json:"-"`
 }
 
 type Groups struct {
-	index map[string]*Group
+	index        map[string]*Group
+	reverseIndex map[DocumentPath]*Group
 }
 
 func NewGroups() *Groups {
-	return &Groups{index: make(map[string]*Group)}
+	return &Groups{index: make(map[string]*Group), reverseIndex: make(map[DocumentPath]*Group)}
+}
+
+func SplitGroupName(group string) (parent, content string) {
+	slash := strings.LastIndexByte(group, '/')
+	if slash != -1 {
+		return group[:slash], group[slash+1:]
+	}
+	return "", group
 }
 
 func (g *Groups) Group(group string) *Group {
@@ -87,20 +94,22 @@ func (g *Groups) Group(group string) *Group {
 		return g.index[group]
 	}
 
-	colon := strings.LastIndexByte(group, '/')
+	parentId, content := SplitGroupName(group)
 	var instance *Group
-	if colon != -1 {
-		parent := g.Group(group[:colon])
+	if parentId != "" {
+		parent := g.Group(parentId)
 		instance = &Group{
-			Content: group[colon+1:],
-			Id:      group,
-			parent:  parent,
+			Content:   content,
+			Id:        group,
+			parent:    parent,
+			Documents: make(map[DocumentPath]struct{}),
 		}
 	} else {
 		instance = &Group{
-			Content: group,
-			Id:      group,
-			parent:  nil,
+			Content:   content,
+			Id:        group,
+			parent:    nil,
+			Documents: make(map[DocumentPath]struct{}),
 		}
 	}
 
@@ -109,14 +118,38 @@ func (g *Groups) Group(group string) *Group {
 }
 
 func (g *Groups) AddDocument(path DocumentPath, doc Document) {
-	for _, group := range doc.Groups {
-		gg := g.Group(group)
-		gg.Documents = append(gg.Documents, path)
+	group := g.Group(doc.Group)
+	group.Documents[path] = struct{}{}
+	g.reverseIndex[path] = group
+}
+
+func (g *Groups) DeleteDocument(path DocumentPath) {
+	if group := g.reverseIndex[path]; group != nil {
+		delete(group.Documents, path)
 	}
+	delete(g.reverseIndex, path)
+}
+
+func (g *Groups) ReplaceDocument(path DocumentPath, doc Document) {
+	g.DeleteDocument(path)
+	g.AddDocument(path, doc)
 }
 
 func (g *Groups) Get(group string) []Group {
 	var groups []Group
+
+	for {
+		_, ok := g.index[group]
+		if ok {
+			break
+		}
+
+		parent, _ := SplitGroupName(group)
+		if parent == "" {
+			break
+		}
+		group = parent
+	}
 
 	for gg := g.index[group]; gg != nil; gg = gg.parent {
 		groups = append(groups, *gg)

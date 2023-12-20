@@ -41,15 +41,18 @@ func (a Api) Group(w http.ResponseWriter, r *http.Request) {
 
 	if cutted, found := strings.CutPrefix(r.URL.Path, "/api/group/"); found && cutted != "" {
 		groups := a.groups.Get(cutted)
-		docs := make([]Document, 0)
+		if len(groups) == 0 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 
+		docs := make([]Document, 0)
 		for i := 0; i < len(groups); i++ {
-			if i > 0 {
-				groups[i].NestedGroups = append(groups[i].NestedGroups, groups[i-1].Id)
-			}
-			for _, dp := range groups[i].Documents {
-				doc, err := dp.Read(groups[i].Id)
-				if err != nil {
+			for dp := range groups[i].Documents {
+				doc, err := dp.Read()
+				if errors.Is(err, os.ErrNotExist) {
+					slog.WarnContext(r.Context(), "document is not exists", "group", groups[i].Id, "docPath", dp)
+				} else if err != nil {
 					slog.ErrorContext(r.Context(), "failed read document", "group", groups[i].Id, "docPath", dp, "error", err)
 					w.WriteHeader(http.StatusInternalServerError)
 					return
@@ -60,10 +63,7 @@ func (a Api) Group(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Add("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		err := json.NewEncoder(w).Encode(map[string]any{
-			"groups":    groups,
-			"documents": docs,
-		})
+		err := json.NewEncoder(w).Encode(docs)
 		if err != nil {
 			slog.ErrorContext(r.Context(), "failed encode documents", "group", cutted, "error", err)
 		}
@@ -131,8 +131,19 @@ func (a Api) Document(w http.ResponseWriter, r *http.Request) {
 				slog.ErrorContext(r.Context(), "failed write document", "docPath", dp, "error", err)
 				w.WriteHeader(http.StatusInternalServerError)
 			} else {
-				a.groups.AddDocument(dp, doc)
-				w.WriteHeader(http.StatusAccepted)
+				a.groups.ReplaceDocument(dp, doc)
+				w.WriteHeader(http.StatusOK)
+			}
+		case http.MethodDelete:
+			err := os.Remove(dp.String())
+			if errors.Is(err, os.ErrNotExist) {
+				w.WriteHeader(http.StatusNotFound)
+			} else if err != nil {
+				slog.ErrorContext(r.Context(), "failed delete document", "docPath", dp, "error", err)
+				w.WriteHeader(http.StatusInternalServerError)
+			} else {
+				a.groups.DeleteDocument(dp)
+				w.WriteHeader(http.StatusOK)
 			}
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
