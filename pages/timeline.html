@@ -223,7 +223,6 @@
       const timeline = new vis.Timeline(container, documents, groups, options);
 
       timeline.on("contextmenu", function (props) {
-        console.log(props);
         if (props.what === "group-label") {
           const ids = [props.group];
           const queue = [props.group];
@@ -234,7 +233,29 @@
             queue.push(...nested);
           }
 
+          const parentId = groups.get(props.group)?.nestedInGroup;
           groups.remove(ids);
+          if (!!parentId) {
+            const parent = groups.get(parentId);
+            const nested = (parent.nestedGroups ?? []).filter(
+              (id) => id !== props.group
+            );
+            if (nested.length === 0) {
+              delete parent.nestedGroups;
+              delete parent.showNested;
+            } else {
+              parent.nestedGroups = nested;
+            }
+            groups.update(parent);
+          }
+          documents.remove(
+            documents
+              .get({
+                fields: ["id", "group"],
+                filter: (doc) => ids.includes(doc.group),
+              })
+              .map((doc) => doc.id)
+          );
         } else if (props.what === "item" && !props.isCluster) {
           window.open(`/document?document=${encodeURI(props.item)}`, "_blank");
         }
@@ -276,17 +297,16 @@
           oldItem.nestedGroups = (nested ?? []).concat(
             oldItem.nestedGroups ?? []
           );
-          oldItem.visible = true;
           groups.update(oldItem);
         } else {
           const colon = group.lastIndexOf("/");
+          lastGroupOrder++;
           if (colon == -1) {
             groups.add({
               id: group,
               content: group,
               nestedGroups: nested,
               order: lastGroupOrder,
-              visible: true,
             });
           } else {
             groups.add({
@@ -294,11 +314,9 @@
               content: group.substring(colon + 1),
               nestedGroups: nested,
               order: lastGroupOrder,
-              visible: true,
             });
             addGroup(group.substring(0, colon), [group], false);
           }
-          lastGroupOrder++;
         }
       }
 
