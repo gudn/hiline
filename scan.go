@@ -12,7 +12,7 @@ import (
 
 func Scan(root string, groups *Groups) {
 	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if strings.HasPrefix(filepath.Base(path), ".") {
+		if strings.HasPrefix(filepath.Base(path), ".") && len(path) > 1 {
 			slog.Info("ignoring hidden item", "path", path, "isDirectory", d.IsDir())
 			if d.IsDir() {
 				return filepath.SkipDir
@@ -46,6 +46,7 @@ func Scan(root string, groups *Groups) {
 			}
 
 			groups.AddDocument(DocumentPath(rel), doc)
+			slog.Debug("added document", "path", path, "relPath", rel)
 		} else {
 			slog.Info("ignore item", "path", path, "isDirectory", d.IsDir())
 		}
