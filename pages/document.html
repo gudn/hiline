@@ -4,16 +4,86 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Document</title>
-    <link
+    <!-- <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css"
+    /> -->
+    <link
+      href="https://cdn.quilljs.com/1.3.6/quill.snow.css"
+      rel="stylesheet"
     />
+    <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
+    <style>
+      *,
+      ::after,
+      ::before {
+        box-sizing: border-box;
+        background-repeat: no-repeat;
+      }
+
+      body {
+        width: 100%;
+        margin: 0;
+      }
+
+      body > .container-fluid {
+        width: 100%;
+        margin-right: auto;
+        margin-left: auto;
+        padding-right: 1rem;
+        padding-left: 1rem;
+      }
+
+      body > form {
+        margin-top: 1rem;
+        margin-bottom: 1.5rem;
+        color: rgb(65, 84, 98);
+        font-style: normal;
+        font-weight: 400;
+        font-size: 18px;
+      }
+
+      body > form > label {
+        display: block;
+        margin-bottom: 0.25rem;
+        font-weight: 400;
+      }
+
+      body > form > input {
+        margin-bottom: 1rem;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+        padding: 0.75rem 1rem;
+        width: 100%;
+        height: calc(3rem + 2px);
+        margin: 0;
+        font-size: 1rem;
+        line-height: 1.5;
+        font-family: inherit;
+        letter-spacing: inherit;
+        overflow: visible;
+        border: 1px solid rgb(162, 175, 185);
+        border-radius: 0.25rem;
+        outline: 0;
+        background-color: transparent;
+        box-shadow: none;
+        color: rgb(65, 84, 98);
+        font-weight: 400;
+        transition: background-color 0.2s ease-in-out,
+          border-color 0.2s ease-in-out, color 0.2s ease-in-out,
+          box-shadow 0.2s ease-in-out;
+      }
+    </style>
   </head>
   <body>
-    <form class="container-fluid">
+    <form class="container-fluid" action="javascript:void(0);">
       <label for="contentInput">Document title</label>
       <input autofocus id="contentInput" required />
     </form>
+    <div class="container-fluid">
+      <div id="editor"></div>
+    </div>
     <script>
       const params = new URLSearchParams(window.location.search);
       const id = params.get("document");
@@ -48,6 +118,15 @@
       }
 
       const contentInput = document.getElementById("contentInput");
+      const editor = new Quill("#editor", {
+        theme: "snow",
+      });
+
+      bc.onmessage = (msg) => {
+        if (id === msg.data.id) {
+          editor.setContents(msg.data.quill);
+        }
+      };
 
       const performUpdate = debounce(() => {
         fetch(`/api/document/${encodeURI(id)}`, {
@@ -55,24 +134,31 @@
           body: jsonify(doc),
         }).then((resp) => {
           if (resp.ok) {
-            bc.postMessage({ id, content: doc.content });
+            bc.postMessage({ id, content: doc.content, quill: doc.quill });
           }
         });
       }, 500);
-
-      contentInput.addEventListener("input", () => {
-        const value = contentInput.value.trim();
-        if (value !== "" && validate(value) && doc.content !== value) {
-          doc.content = value;
-          performUpdate();
-        }
-      });
 
       let doc;
       fetch(`/api/document/${encodeURI(id)}`).then(async (resp) => {
         if (resp.ok) {
           doc = await resp.json();
           contentInput.value = doc.content;
+          editor.setContents(doc.quill ?? []);
+          contentInput.addEventListener("input", () => {
+            const value = contentInput.value.trim();
+            if (value !== "" && validate(value) && doc.content !== value) {
+              doc.content = value;
+              performUpdate();
+            }
+          });
+          editor.on("text-change", (delta, oldDelta, source) => {
+            if (source !== "user") {
+              return;
+            }
+            doc.quill = editor.getContents();
+            performUpdate();
+          });
         } else {
           window.close();
         }
