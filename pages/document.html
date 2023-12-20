@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css"
+    />
+  </head>
+  <body>
+    <form class="container-fluid">
+      <label for="contentInput">Document title</label>
+      <input autofocus id="contentInput" required />
+    </form>
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const id = params.get("document");
+      if (id === null) {
+        window.close();
+      }
+
+      const bc = new BroadcastChannel("document_updates");
+
+      function validate(text) {
+        return text.indexOf(":") == -1;
+      }
+
+      function jsonify(item) {
+        const c = { ...item };
+        delete c.id;
+        return JSON.stringify(c, null, 2);
+      }
+
+      function debounce(f, n) {
+        let timer = null;
+
+        return (...args) => {
+          clearTimeout(timer);
+
+          timer = setTimeout(() => {
+            f(...args);
+            clearTimeout(timer);
+            timer = null;
+          }, n);
+        };
+      }
+
+      const contentInput = document.getElementById("contentInput");
+
+      const performUpdate = debounce(() => {
+        fetch(`/api/document/${encodeURI(id)}`, {
+          method: "POST",
+          body: jsonify(doc),
+        }).then((resp) => {
+          if (resp.ok) {
+            bc.postMessage({ id, content: doc.content });
+          }
+        });
+      }, 500);
+
+      contentInput.addEventListener("input", () => {
+        const value = contentInput.value.trim();
+        if (value !== "" && validate(value) && doc.content !== value) {
+          doc.content = value;
+          performUpdate();
+        }
+      });
+
+      let doc;
+      fetch(`/api/document/${encodeURI(id)}`).then(async (resp) => {
+        if (resp.ok) {
+          doc = await resp.json();
+          contentInput.value = doc.content;
+        } else {
+          window.close();
+        }
+      });
+    </script>
+  </body>
+</html>

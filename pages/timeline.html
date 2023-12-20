@@ -19,7 +19,7 @@
     />
     <style>
       nav {
-        justify-content: end;
+        justify-content: space-between;
         align-items: center;
       }
 
@@ -34,11 +34,19 @@
       main {
         padding-top: 0 !important;
       }
+
+      button.group-close {
+        width: 30px;
+        height: 30px;
+        font-size: 10px;
+        padding: 0;
+      }
     </style>
   </head>
   <body>
     <datalist id="known-groups"></datalist>
     <nav class>
+      <span>Right-click on group to remove</span>
       <button role="button" id="add-group-button">Add group</button>
     </nav>
     <main class="container-fluid">
@@ -89,6 +97,14 @@
       const groups = new vis.DataSet();
 
       const container = document.getElementById("visualization");
+      const bc = new BroadcastChannel("document_updates");
+
+      bc.onmessage = (msg) => {
+        const doc = documents.get(msg.data.id);
+        if (!!doc) {
+          documents.update(Object.assign(doc, msg.data));
+        }
+      };
 
       const addDocumentDialog = document.getElementById("add-document-dialog");
       const addDocumentInput = document.getElementById("add-document-input");
@@ -153,11 +169,9 @@
       const options = {
         editable: true,
         groupEditable: true,
-        cluster: {
-          maxItems: 1,
-        },
         moveable: true,
         zoomKey: "shiftKey",
+        zoomMin: 24 * 60 * 60 * 1000,
         horizontalScroll: true,
         onAdd(item, callback) {
           addDocumentCallbackData = { item, callback };
@@ -189,6 +203,25 @@
       };
 
       const timeline = new vis.Timeline(container, documents, groups, options);
+
+      timeline.on("contextmenu", function (props) {
+        console.log(props);
+        if (props.what === "group-label") {
+          const ids = [props.group];
+          const queue = [props.group];
+
+          while (queue.length > 0) {
+            const nested = groups.get(queue.shift()).nestedGroups ?? [];
+            ids.push(...nested);
+            queue.push(...nested);
+          }
+
+          groups.remove(ids);
+        } else if (props.what === "item" && !props.isCluster) {
+          window.open(`/document?document=${encodeURI(props.item)}`, "_blank");
+        }
+        props.event.preventDefault();
+      });
 
       const knownGroupsList = document.getElementById("known-groups");
       const addGroupDialog = document.getElementById("add-group-dialog");
@@ -230,6 +263,7 @@
           oldItem.nestedGroups = (nested ?? []).concat(
             oldItem.nestedGroups ?? []
           );
+          oldItem.visible = true;
           groups.update(oldItem);
         } else {
           const colon = group.lastIndexOf("/");
@@ -239,6 +273,7 @@
               content: group,
               nestedGroups: nested,
               order: lastGroupOrder,
+              visible: true,
             });
           } else {
             groups.add({
@@ -246,6 +281,7 @@
               content: group.substring(colon + 1),
               nestedGroups: nested,
               order: lastGroupOrder,
+              visible: true,
             });
             addGroup(group.substring(0, colon), [group]);
           }
@@ -267,7 +303,7 @@
         addGroupDialog.close();
         fetch(`/api/group/${encodeURI(groupName)}`).then(async (resp) => {
           addGroup(groupName);
-          if (resp.status == 200) {
+          if (resp.ok) {
             const docs = await resp.json();
             documents.update(docs);
             timeline.focus(docs.map((doc) => doc.id));
