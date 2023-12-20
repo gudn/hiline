@@ -125,10 +125,12 @@
       bc.onmessage = (msg) => {
         if (id === msg.data.id) {
           editor.setContents(msg.data.quill);
+          document.title = contentInput.value = msg.data.content;
         }
       };
 
       const performUpdate = debounce(() => {
+        document.title = doc.content;
         fetch(`/api/document/${encodeURI(id)}`, {
           method: "POST",
           body: jsonify(doc),
@@ -143,7 +145,7 @@
       fetch(`/api/document/${encodeURI(id)}`).then(async (resp) => {
         if (resp.ok) {
           doc = await resp.json();
-          contentInput.value = doc.content;
+          document.title = contentInput.value = doc.content;
           editor.setContents(doc.quill ?? []);
           contentInput.addEventListener("input", () => {
             const value = contentInput.value.trim();

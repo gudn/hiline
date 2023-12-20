@@ -31,6 +31,10 @@
         padding: var(--spacing);
       }
 
+      nav > div {
+        display: inline-block;
+      }
+
       main {
         padding-top: 0 !important;
       }
@@ -46,7 +50,7 @@
   <body>
     <datalist id="known-groups"></datalist>
     <nav class>
-      <span>Right-click on group to remove</span>
+      <div>Right-click on group to remove<br />Right-click on item to edit</div>
       <button role="button" id="add-group-button">Add group</button>
     </nav>
     <main class="container-fluid">
@@ -121,7 +125,8 @@
         return JSON.stringify(c, null, 2);
       }
 
-      function addDocument() {
+      function addDocument(ev) {
+        ev.preventDefault();
         const name = addDocumentInput.value?.trim();
         addDocumentInput.value = "";
 
@@ -166,6 +171,18 @@
       document
         .getElementById("add-document-submit")
         .addEventListener("click", addDocument);
+
+      document
+        .getElementById("add-document-close")
+        .addEventListener("click", (ev) => {
+          if (addDocumentCallbackData !== null) {
+            addDocumentCallbackData.callback(null);
+            addDocumentCallbackData = null;
+          }
+          addDocumentInput.value = "";
+          addDocumentDialog.close();
+          ev.preventDefault();
+        });
 
       const options = {
         editable: true,
@@ -237,22 +254,17 @@
         }
       });
 
-      document
-        .getElementById("add-group-button")
-        .addEventListener("click", () => {
-          addGroupDialog.showModal();
-        });
+      function addGroup(group, nested = null, load = true) {
+        if (load) {
+          fetch(`/api/group/${encodeURI(group)}`).then(async (resp) => {
+            if (resp.ok) {
+              const docs = await resp.json();
+              documents.update(docs);
+              timeline.focus(docs.map((doc) => doc.id));
+            }
+          });
+        }
 
-      document
-        .getElementById("add-group-close")
-        .addEventListener("click", () => {
-          addGroupInput.value = "";
-          addGroupDialog.close();
-        });
-
-      let lastGroupOrder = 0;
-
-      function addGroup(group, nested = null) {
         if (!knownGroupsList.querySelector(`option[value="${group}"]`)) {
           const el = document.createElement("option");
           el.value = group;
@@ -284,13 +296,40 @@
               order: lastGroupOrder,
               visible: true,
             });
-            addGroup(group.substring(0, colon), [group]);
+            addGroup(group.substring(0, colon), [group], false);
           }
           lastGroupOrder++;
         }
       }
 
-      function addGroupEvent() {
+      function openAddGroupDialog() {
+        if (!addDocumentDialog.open && !addGroupDialog.open) {
+          const selection = timeline.getSelection();
+          if (selection.length === 1) {
+            const doc = documents.get(selection[0]);
+            addGroup(`${doc.group}/${doc.content}`);
+          } else {
+            addGroupDialog.showModal();
+          }
+        }
+      }
+
+      document
+        .getElementById("add-group-button")
+        .addEventListener("click", openAddGroupDialog);
+
+      document
+        .getElementById("add-group-close")
+        .addEventListener("click", (ev) => {
+          addGroupInput.value = "";
+          addGroupDialog.close();
+          ev.preventDefault();
+        });
+
+      let lastGroupOrder = 0;
+
+      function addGroupEvent(ev) {
+        ev.preventDefault();
         const groupName = addGroupInput.value?.trim();
         addGroupInput.value = "";
         if (!groupName) {
@@ -302,14 +341,7 @@
           return;
         }
         addGroupDialog.close();
-        fetch(`/api/group/${encodeURI(groupName)}`).then(async (resp) => {
-          addGroup(groupName);
-          if (resp.ok) {
-            const docs = await resp.json();
-            documents.update(docs);
-            timeline.focus(docs.map((doc) => doc.id));
-          }
-        });
+        addGroup(groupName);
       }
 
       document
@@ -319,6 +351,18 @@
       document
         .getElementById("add-group-submit")
         .addEventListener("click", addGroupEvent);
+
+      document.addEventListener("keydown", (ev) => {
+        if (
+          ev.key === "i" &&
+          ev.ctrlKey &&
+          !ev.shiftKey &&
+          !ev.altKey &&
+          !ev.metaKey
+        ) {
+          openAddGroupDialog();
+        }
+      });
     </script>
   </body>
 </html>
