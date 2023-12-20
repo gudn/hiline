@@ -115,10 +115,6 @@
       const addDocumentInput = document.getElementById("add-document-input");
       let addDocumentCallbackData = null;
 
-      function validate(text) {
-        return text.indexOf(":") == -1;
-      }
-
       function jsonify(item) {
         const c = { ...item };
         delete c.id;
@@ -139,10 +135,6 @@
           return;
         }
 
-        if (!validate(name)) {
-          alert("invalid name. Name may not contain a colon");
-          return;
-        }
         addDocumentDialog.close();
 
         const { item, callback } = addDocumentCallbackData;
@@ -359,10 +351,6 @@
           return;
         }
 
-        if (!validate(groupName)) {
-          alert("invalid group. Group may not contain a colon");
-          return;
-        }
         addGroupDialog.close();
         addGroup(groupName);
       }

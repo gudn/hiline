@@ -93,10 +93,6 @@
 
       const bc = new BroadcastChannel("document_updates");
 
-      function validate(text) {
-        return text.indexOf(":") == -1;
-      }
-
       function jsonify(item) {
         const c = { ...item };
         delete c.id;
@@ -158,7 +154,7 @@
           editor.setContents(doc.quill ?? []);
           contentInput.addEventListener("input", () => {
             const value = contentInput.value.trim();
-            if (value !== "" && validate(value) && doc.content !== value) {
+            if (value !== "" && doc.content !== value) {
               doc.content = value;
               performUpdate();
             }
